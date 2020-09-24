@@ -44,7 +44,7 @@ public class SwipeLogController {
      * @throws IOException
      */
     @GetMapping("")
-    public List<SwipeLog> getAllSwipeLogs() throws IOException {
+    public List<SwipeLog> getAllSwipeLogs() {
         return swipeLogCollectorService.getSwipeLogs("activity-log-swipe");
     }
 
@@ -69,12 +69,11 @@ public class SwipeLogController {
      */
     @GetMapping("/user/like")
     public List<SwipeLog> getAllLikedSwipeLogsByUserId(@RequestParam("userId") final String userId) throws IOException {
-
         return swipeLogCollectorService.getSwipeLogsByUserIdAndScore("activity-log-swipe", userId, 1);
     }
 
     /**
-     * 사용자별 좋아요한 스와이프 로그 전체 조회
+     * 사용자별 좋아요한 스와이프 로그 전체 조회(그룹핑)
      *
      * @param userId
      * @return
@@ -85,6 +84,12 @@ public class SwipeLogController {
         return swipeLogCollectorService.getSwipeLogListGroupedByCardSetSeq("activity-log-swipe", userId, 1);
     }
 
+    /**
+     * 사용자별 스와이프 로그 전체 조회(그룹핑)
+     * @param userList
+     * @return
+     * @throws IOException
+     */
     @PostMapping("/user/grouped")
     public List<UserSwipeLogRes> getUserSwipeLogResList(@RequestBody final List<User> userList) throws IOException {
         return swipeLogCollectorService.getSwipeLogsGroupedByUserId("activity-log-swipe", userList);
