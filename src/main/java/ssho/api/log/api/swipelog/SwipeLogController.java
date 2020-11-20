@@ -5,11 +5,13 @@ import org.springframework.web.bind.annotation.*;
 import ssho.api.log.domain.swipelog.model.SwipeLog;
 import ssho.api.log.domain.swipelog.model.req.SwipeLogReq;
 import ssho.api.log.domain.swipelog.model.res.UserSwipeLogRes;
-import ssho.api.log.domain.tag.model.ExpTag;
 import ssho.api.log.domain.user.model.User;
 import ssho.api.log.service.swipelog.SwipeLogServiceImpl;
+import ssho.api.log.util.auth.Auth;
 
+import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -21,10 +23,13 @@ import java.util.Map;
 @RestController
 public class SwipeLogController {
 
-    private final SwipeLogServiceImpl swipeLogCollectorService;
+    private final SwipeLogServiceImpl swipeLogService;
 
-    public SwipeLogController(final SwipeLogServiceImpl swipeLogCollectorService) {
-        this.swipeLogCollectorService = swipeLogCollectorService;
+    private final String SWIPE_INDEX = "activity-log-swipe";
+    private final String SWIPE_TEST_INDEX = "activity-log-swipe-test-20201119";
+
+    public SwipeLogController(final SwipeLogServiceImpl swipeLogService) {
+        this.swipeLogService = swipeLogService;
     }
 
     /**
@@ -32,20 +37,31 @@ public class SwipeLogController {
      *
      * @throws IOException
      */
+    @Auth
     @PostMapping("")
-    public void collectSwipeLog(@RequestBody SwipeLogReq swipeReq) throws IOException {
-        swipeLogCollectorService.saveSwipeLogs(swipeReq, "activity-log-swipe");
+    public void collectSwipeLog(@RequestBody SwipeLogReq swipeReq, final HttpServletRequest httpServletRequest) throws IOException {
+
+        final int userId = (int)httpServletRequest.getAttribute("userId");
+
+        swipeReq.getSwipeList()
+                .stream()
+                .forEach(swipeLog -> swipeLog.setUserId(userId));
+
+        swipeLogService.saveSwipeLogs(swipeReq, SWIPE_TEST_INDEX);
     }
 
     /**
      * 스와이프 로그 전체 조회
-     *
-     * @return List<String>
-     * @throws IOException
+     * @return
      */
     @GetMapping("")
     public List<SwipeLog> getAllSwipeLogs() {
-        return swipeLogCollectorService.getSwipeLogs("activity-log-swipe");
+        try{
+            return swipeLogService.getSwipeLogs(SWIPE_TEST_INDEX);
+        }
+        catch (Exception e){
+            return new ArrayList<>();
+        }
     }
 
     /**
@@ -56,8 +72,13 @@ public class SwipeLogController {
      * @throws IOException
      */
     @GetMapping("/user")
-    public List<SwipeLog> getAllSwipeLogsByUserId(@RequestParam("userId") final String userId) throws IOException {
-        return swipeLogCollectorService.getSwipeLogsByUserId("activity-log-swipe", userId);
+    public List<SwipeLog> getAllSwipeLogsByUserId(@RequestParam("userId") final String userId) {
+        try {
+            return swipeLogService.getSwipeLogsByUserId(SWIPE_TEST_INDEX, userId);
+        }
+        catch (Exception e){
+            return new ArrayList<>();
+        }
     }
 
     /**
@@ -68,8 +89,8 @@ public class SwipeLogController {
      * @throws IOException
      */
     @GetMapping("/user/like")
-    public List<SwipeLog> getAllLikedSwipeLogsByUserId(@RequestParam("userId") final String userId) throws IOException {
-        return swipeLogCollectorService.getSwipeLogsByUserIdAndScore("activity-log-swipe", userId, 1);
+    public List<SwipeLog> getAllLikedSwipeLogsByUserId(@RequestParam("userId") final String userId) {
+        return swipeLogService.getSwipeLogsByUserIdAndScore(SWIPE_TEST_INDEX, userId, 1);
     }
 
     /**
@@ -81,7 +102,7 @@ public class SwipeLogController {
      */
     @GetMapping("/user/like/grouped")
     public Map<Integer, List<SwipeLog>> getAllGroupedLikedSwipeLogsByUserId(@RequestParam("userId") final String userId) throws IOException {
-        return swipeLogCollectorService.getSwipeLogListGroupedByCardSetSeq("activity-log-swipe", userId, 1);
+        return swipeLogService.getSwipeLogListGroupedByCardSetSeq(SWIPE_TEST_INDEX, userId, 1);
     }
 
     /**
@@ -92,12 +113,17 @@ public class SwipeLogController {
      */
     @PostMapping("/user/grouped")
     public List<UserSwipeLogRes> getUserSwipeLogResList(@RequestBody final List<User> userList) throws IOException {
-        return swipeLogCollectorService.getSwipeLogsGroupedByUserId("activity-log-swipe", userList);
+        return swipeLogService.getSwipeLogsGroupedByUserId(SWIPE_TEST_INDEX, userList);
     }
 
-    @GetMapping("/user/tag")
-    public List<ExpTag> getExpTagListOrderedByTagCountByUserId(@RequestParam("userId") final String userId) {
-        return swipeLogCollectorService.getExpTagListOrderBySwipeCount("activity-log-swipe", userId, 1);
+    @DeleteMapping("")
+    public void deleteAllSwipeLogs() throws IOException {
+        swipeLogService.deleteAllSwipeLogs(SWIPE_TEST_INDEX);
+    }
+
+    @DeleteMapping("/user")
+    public void deleteUserSwipeLogs(@RequestParam("userId") final int userId) throws IOException {
+        swipeLogService.deleteAllSwipeLogsByUserId(SWIPE_TEST_INDEX, userId);
     }
 }
 

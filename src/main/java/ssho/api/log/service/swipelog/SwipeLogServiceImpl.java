@@ -10,25 +10,29 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.index.query.MatchAllQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.TermQueryBuilder;
+import org.elasticsearch.index.reindex.DeleteByQueryRequest;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import ssho.api.log.domain.swipelog.model.SwipeLog;
 import ssho.api.log.domain.swipelog.model.req.SwipeLogReq;
 import ssho.api.log.domain.swipelog.model.res.UserSwipeLogRes;
-import ssho.api.log.domain.tag.model.ExpTag;
 import ssho.api.log.domain.user.model.User;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -58,6 +62,7 @@ public class SwipeLogServiceImpl implements SwipeLogService {
         // duration 계산 및 field set
         calculateAndSetDuration(swipeReq);
 
+        // 이전 카트셋 seq 조회
         int prevCardSetSeq = getPrevCardSetId(index, swipeReq.getSwipeList().get(0).getUserId());
 
         int cardSetSeq = prevCardSetSeq + 1;
@@ -91,6 +96,10 @@ public class SwipeLogServiceImpl implements SwipeLogService {
 
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
 
+        sourceBuilder.sort("userId", SortOrder.ASC);
+        sourceBuilder.sort("cardSetSeq", SortOrder.ASC);
+        sourceBuilder.sort("cardSeq", SortOrder.ASC);
+
         // search query 최대 크기 set
         sourceBuilder.size(1000);
 
@@ -121,7 +130,7 @@ public class SwipeLogServiceImpl implements SwipeLogService {
     }
 
     @Override
-    public List<UserSwipeLogRes> getSwipeLogsGroupedByUserId(final String index, final List<User> userList) throws IOException {
+    public List<UserSwipeLogRes> getSwipeLogsGroupedByUserId(final String index, final List<User> userList) {
 
         List<UserSwipeLogRes> userSwipeLogResList = new ArrayList<>();
 
@@ -141,30 +150,41 @@ public class SwipeLogServiceImpl implements SwipeLogService {
             // ES로 부터 데이터 받기
             SearchResponse searchResponse;
 
-            searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-
-            SearchHit[] searchHits = searchResponse.getHits().getHits();
-
-            List<SwipeLog> swipeLogList = Arrays.stream(searchHits).map(hit -> {
-                try {
-                    return objectMapper.readValue(hit.getSourceAsString(), SwipeLog.class);
-                } catch (JsonProcessingException e) {
-                    e.printStackTrace();
-                    return null;
+            try {
+                searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+                if (searchResponse.getHits().getHits().length == 0) {
+                    UserSwipeLogRes userSwipeLogRes = new UserSwipeLogRes();
+                    userSwipeLogRes.setUserId(String.valueOf(user.getId()));
+                    userSwipeLogResList.add(userSwipeLogRes);
+                    continue;
                 }
-            }).sorted((a, b) -> {
-                if (Integer.parseInt(a.getItemId()) >= Integer.parseInt(b.getItemId())) {
-                    return 1;
-                }
-                return -1;
-            }).collect(Collectors.toList());
 
-            UserSwipeLogRes userSwipeLogRes = new UserSwipeLogRes();
-            userSwipeLogRes.setUserId(user.getId());
-            userSwipeLogRes.setSwipeLogList(swipeLogList);
-            userSwipeLogResList.add(userSwipeLogRes);
+                SearchHit[] searchHits = searchResponse.getHits().getHits();
+
+                List<SwipeLog> swipeLogList = Arrays.stream(searchHits).map(hit -> {
+                    try {
+                        return objectMapper.readValue(hit.getSourceAsString(), SwipeLog.class);
+                    } catch (JsonProcessingException e) {
+                        e.printStackTrace();
+                        return null;
+                    }
+                }).sorted((a, b) -> {
+                    if (Integer.parseInt(a.getItemId()) >= Integer.parseInt(b.getItemId())) {
+                        return 1;
+                    }
+                    return -1;
+                }).collect(Collectors.toList());
+
+                UserSwipeLogRes userSwipeLogRes = new UserSwipeLogRes();
+                userSwipeLogRes.setUserId(String.valueOf(user.getId()));
+                userSwipeLogRes.setSwipeLogList(swipeLogList);
+                userSwipeLogResList.add(userSwipeLogRes);
+            } catch (Exception e) {
+                UserSwipeLogRes userSwipeLogRes = new UserSwipeLogRes();
+                userSwipeLogRes.setUserId(String.valueOf(user.getId()));
+                userSwipeLogResList.add(userSwipeLogRes);
+            }
         }
-
         return userSwipeLogResList;
     }
 
@@ -261,79 +281,20 @@ public class SwipeLogServiceImpl implements SwipeLogService {
     }
 
     @Override
-    public List<ExpTag> getExpTagListOrderBySwipeCount(String index, String userId, final int score) {
-        // ES에 요청 보내기
-        SearchRequest searchRequest = new SearchRequest(index);
-
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-
-        QueryBuilder queryBuilder = QueryBuilders.boolQuery()
-                .must(QueryBuilders.termQuery("userId", userId))
-                .must(QueryBuilders.termQuery("score", score));
-
-        sourceBuilder.query(queryBuilder);
-        sourceBuilder.sort("cardSetSeq", SortOrder.ASC);
-        sourceBuilder.sort("cardSeq", SortOrder.ASC);
-
-        // search query 최대 크기 set
-        sourceBuilder.size(1000);
-
-        searchRequest.source(sourceBuilder);
-
-        // ES로 부터 데이터 받기
-        SearchResponse searchResponse;
-
-        try {
-            searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-        } catch (Exception e) {
-            return new ArrayList<>();
-        }
-
-        SearchHit[] searchHits = searchResponse.getHits().getHits();
-
-        List<SwipeLog> swipeLogList = Arrays.stream(searchHits).map(hit -> {
-            try {
-                return objectMapper.readValue(hit.getSourceAsString(), SwipeLog.class);
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-                return null;
-            }
-        }).collect(Collectors.toList());
-
-        List<ExpTag> tagList =
-                webClient
-                        .get().uri("/tag/real")
-                        .retrieve()
-                        .bodyToMono(new ParameterizedTypeReference<List<ExpTag>>() {
-                        })
-                        .block();
-
-        tagList.stream().forEach(expTag -> log.info(expTag + ""));
-
-        Map<ExpTag, Integer> tagCountMap = new HashMap<>();
-        tagList.stream().forEach(tag -> tagCountMap.put(tag, 0));
-
-        swipeLogList
-                .stream()
-                .forEach(swipeLog -> {
-                    if (swipeLog.getExpTagList() != null) {
-                        swipeLog.getExpTagList()
-                                .stream()
-                                .forEach(expTag -> tagCountMap.computeIfPresent(expTag, (ExpTag tag, Integer count) -> ++count));
-                    }
-                });
-
-        List<ExpTag> orderedTagList = new ArrayList<>();
-
-        tagCountMap.entrySet()
-                .stream()
-                .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
-                .forEachOrdered(x -> orderedTagList.add(x.getKey()));
-
-        return orderedTagList;
+    public void deleteAllSwipeLogs(String index) throws IOException {
+        DeleteByQueryRequest deleteByQueryRequest = new DeleteByQueryRequest(index);
+        deleteByQueryRequest.setQuery(new MatchAllQueryBuilder());
+        restHighLevelClient.deleteByQuery(deleteByQueryRequest, RequestOptions.DEFAULT);
     }
 
-    private int getPrevCardSetId(final String index, final String userId) throws JsonProcessingException {
+    @Override
+    public void deleteAllSwipeLogsByUserId(String index, int userId) throws IOException {
+        DeleteByQueryRequest deleteByQueryRequest = new DeleteByQueryRequest(index);
+        deleteByQueryRequest.setQuery(new TermQueryBuilder("userId", userId));
+        restHighLevelClient.deleteByQuery(deleteByQueryRequest, RequestOptions.DEFAULT);
+    }
+
+    private int getPrevCardSetId(final String index, final int userId) throws JsonProcessingException {
         // ES에 요청 보내기
         SearchRequest searchRequest = new SearchRequest(index);
 

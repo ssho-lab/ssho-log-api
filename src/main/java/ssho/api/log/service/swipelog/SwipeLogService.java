@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import ssho.api.log.domain.swipelog.model.SwipeLog;
 import ssho.api.log.domain.swipelog.model.req.SwipeLogReq;
 import ssho.api.log.domain.swipelog.model.res.UserSwipeLogRes;
-import ssho.api.log.domain.tag.model.ExpTag;
 import ssho.api.log.domain.user.model.User;
 
 import java.io.IOException;
@@ -40,5 +39,7 @@ public interface SwipeLogService {
      */
     List<SwipeLog> getSwipeLogsByUserId(final String index, final String userId) throws JsonProcessingException;
 
-    List<ExpTag> getExpTagListOrderBySwipeCount(String index, String userId, final int score);
+    void deleteAllSwipeLogs(final String index) throws Exception;
+
+    void deleteAllSwipeLogsByUserId(final String index, final int userId) throws IOException;
 }
