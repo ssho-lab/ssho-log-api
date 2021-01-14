@@ -143,7 +143,7 @@ public class SwipeLogServiceImpl implements SwipeLogService {
             sourceBuilder.query(QueryBuilders.termQuery("userId", user.getId()));
 
             // search query 최대 크기 set
-            sourceBuilder.size(1000);
+            sourceBuilder.size(10000);
 
             searchRequest.source(sourceBuilder);
 
@@ -168,11 +168,6 @@ public class SwipeLogServiceImpl implements SwipeLogService {
                         e.printStackTrace();
                         return null;
                     }
-                }).sorted((a, b) -> {
-                    if (Integer.parseInt(a.getItemId()) >= Integer.parseInt(b.getItemId())) {
-                        return 1;
-                    }
-                    return -1;
                 }).collect(Collectors.toList());
 
                 UserSwipeLogRes userSwipeLogRes = new UserSwipeLogRes();
@@ -180,6 +175,9 @@ public class SwipeLogServiceImpl implements SwipeLogService {
                 userSwipeLogRes.setSwipeLogList(swipeLogList);
                 userSwipeLogResList.add(userSwipeLogRes);
             } catch (Exception e) {
+
+                log.info(e.toString() +"");
+
                 UserSwipeLogRes userSwipeLogRes = new UserSwipeLogRes();
                 userSwipeLogRes.setUserId(String.valueOf(user.getId()));
                 userSwipeLogResList.add(userSwipeLogRes);
