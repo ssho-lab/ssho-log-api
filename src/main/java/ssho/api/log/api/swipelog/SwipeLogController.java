@@ -2,9 +2,9 @@ package ssho.api.log.api.swipelog;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
-import ssho.api.log.domain.swipelog.model.SwipeLog;
-import ssho.api.log.domain.swipelog.model.req.SwipeLogReq;
-import ssho.api.log.domain.swipelog.model.res.UserSwipeLogRes;
+import ssho.api.log.domain.swipelog.SwipeLog;
+import ssho.api.log.domain.swipelog.req.SwipeLogReq;
+import ssho.api.log.domain.swipelog.res.UserSwipeLogRes;
 import ssho.api.log.domain.user.model.User;
 import ssho.api.log.service.swipelog.SwipeLogServiceImpl;
 import ssho.api.log.util.auth.Auth;
@@ -43,9 +43,7 @@ public class SwipeLogController {
 
         final int userId = (int)httpServletRequest.getAttribute("userId");
 
-        swipeReq.getSwipeList()
-                .stream()
-                .forEach(swipeLog -> swipeLog.setUserId(userId));
+        swipeReq.getSwipeList().forEach(swipeLog -> swipeLog.setUserId(userId));
 
         swipeLogService.saveSwipeLogs(swipeReq, SWIPE_TEST_INDEX);
     }
@@ -91,6 +89,18 @@ public class SwipeLogController {
     @GetMapping("/user/like")
     public List<SwipeLog> getAllLikedSwipeLogsByUserId(@RequestParam("userId") final String userId) {
         return swipeLogService.getSwipeLogsByUserIdAndScore(SWIPE_TEST_INDEX, userId, 1);
+    }
+
+    /**
+     * 사용자별 좋아요한 스와이프 로그 전체 조회
+     *
+     * @param userId
+     * @return
+     * @throws IOException
+     */
+    @GetMapping("/user/like/recent")
+    public List<SwipeLog> getAllRecentLikedSwipeLogsByUserId(@RequestParam("userId") final String userId) {
+        return swipeLogService.getRecentSwipeLogsByUserIdAndScore(SWIPE_TEST_INDEX, userId, 1);
     }
 
     /**

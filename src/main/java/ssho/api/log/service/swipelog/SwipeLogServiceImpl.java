@@ -20,9 +20,9 @@ import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortOrder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import ssho.api.log.domain.swipelog.model.SwipeLog;
-import ssho.api.log.domain.swipelog.model.req.SwipeLogReq;
-import ssho.api.log.domain.swipelog.model.res.UserSwipeLogRes;
+import ssho.api.log.domain.swipelog.SwipeLog;
+import ssho.api.log.domain.swipelog.req.SwipeLogReq;
+import ssho.api.log.domain.swipelog.res.UserSwipeLogRes;
 import ssho.api.log.domain.user.model.User;
 
 import java.io.IOException;
@@ -62,15 +62,8 @@ public class SwipeLogServiceImpl implements SwipeLogService {
         // duration 계산 및 field set
         calculateAndSetDuration(swipeReq);
 
-        // 이전 카트셋 seq 조회
-        int prevCardSetSeq = getPrevCardSetId(index, swipeReq.getSwipeList().get(0).getUserId());
-
-        int cardSetSeq = prevCardSetSeq + 1;
-
         // swipe log 별로 IndexRequest 생성 후 bulkRequest에 추가
         for (SwipeLog s : swipeReq.getSwipeList()) {
-
-            s.setCardSetSeq(cardSetSeq);
 
             // docId 생성
             final String docId =
@@ -97,7 +90,7 @@ public class SwipeLogServiceImpl implements SwipeLogService {
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
 
         sourceBuilder.sort("userId", SortOrder.ASC);
-        sourceBuilder.sort("cardSetSeq", SortOrder.ASC);
+        sourceBuilder.sort("userCardSetId", SortOrder.ASC);
         sourceBuilder.sort("cardSeq", SortOrder.ASC);
 
         // search query 최대 크기 set
@@ -194,7 +187,7 @@ public class SwipeLogServiceImpl implements SwipeLogService {
 
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.query(QueryBuilders.termQuery("userId", userId));
-        sourceBuilder.sort("cardSetSeq", SortOrder.ASC);
+        sourceBuilder.sort("userCardSetId", SortOrder.ASC);
         sourceBuilder.sort("cardSeq", SortOrder.ASC);
 
         // search query 최대 크기 set
@@ -225,6 +218,7 @@ public class SwipeLogServiceImpl implements SwipeLogService {
         return swipeLogList;
     }
 
+    @Override
     public List<SwipeLog> getSwipeLogsByUserIdAndScore(final String index, final String userId, final int score) {
 
         // ES에 요청 보내기
@@ -237,7 +231,7 @@ public class SwipeLogServiceImpl implements SwipeLogService {
                 .must(QueryBuilders.termQuery("score", score));
 
         sourceBuilder.query(queryBuilder);
-        sourceBuilder.sort("cardSetSeq", SortOrder.ASC);
+        sourceBuilder.sort("userCardSetId", SortOrder.ASC);
         sourceBuilder.sort("cardSeq", SortOrder.ASC);
 
         // search query 최대 크기 set
@@ -268,14 +262,56 @@ public class SwipeLogServiceImpl implements SwipeLogService {
         return swipeLogList;
     }
 
+    @Override
+    public List<SwipeLog> getRecentSwipeLogsByUserIdAndScore(final String index, final String userId, final int score) {
+
+        // ES에 요청 보내기
+        SearchRequest searchRequest = new SearchRequest(index);
+
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+
+        QueryBuilder queryBuilder = QueryBuilders.boolQuery()
+                .must(QueryBuilders.termQuery("userId", userId))
+                .must(QueryBuilders.termQuery("score", score));
+
+        sourceBuilder.query(queryBuilder);
+        sourceBuilder.sort("userCardSetId", SortOrder.DESC);
+        sourceBuilder.sort("cardSeq", SortOrder.DESC);
+
+        // search query 최대 크기 set
+        sourceBuilder.size(1000);
+
+        searchRequest.source(sourceBuilder);
+
+        // ES로 부터 데이터 받기
+        SearchResponse searchResponse;
+
+        try {
+            searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+
+        SearchHit[] searchHits = searchResponse.getHits().getHits();
+
+        List<SwipeLog> swipeLogList = Arrays.stream(searchHits).map(hit -> {
+            try {
+                return objectMapper.readValue(hit.getSourceAsString(), SwipeLog.class);
+            } catch (JsonProcessingException e) {
+                e.printStackTrace();
+                return null;
+            }
+        }).collect(Collectors.toList());
+
+        return swipeLogList;
+    }
+
+    @Override
     public Map<Integer, List<SwipeLog>> getSwipeLogListGroupedByCardSetSeq(final String index, final String userId, final int score) {
 
         List<SwipeLog> swipeLogList = getSwipeLogsByUserIdAndScore(index, userId, score);
 
-        Map<Integer, List<SwipeLog>> swipeLogListMap =
-                swipeLogList.stream().collect(Collectors.groupingBy(SwipeLog::getCardSetSeq));
-
-        return swipeLogListMap;
+        return swipeLogList.stream().collect(Collectors.groupingBy(SwipeLog::getUserCardSetId));
     }
 
     @Override
@@ -290,39 +326,6 @@ public class SwipeLogServiceImpl implements SwipeLogService {
         DeleteByQueryRequest deleteByQueryRequest = new DeleteByQueryRequest(index);
         deleteByQueryRequest.setQuery(new TermQueryBuilder("userId", userId));
         restHighLevelClient.deleteByQuery(deleteByQueryRequest, RequestOptions.DEFAULT);
-    }
-
-    private int getPrevCardSetId(final String index, final int userId) throws JsonProcessingException {
-        // ES에 요청 보내기
-        SearchRequest searchRequest = new SearchRequest(index);
-
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-        sourceBuilder.query(QueryBuilders.termQuery("userId", userId));
-        sourceBuilder.sort("cardSetSeq", SortOrder.DESC);
-
-        // search query 최대 크기 set
-        sourceBuilder.size(1);
-
-        searchRequest.source(sourceBuilder);
-
-        // ES로 부터 데이터 받기
-        SearchResponse searchResponse;
-
-        try {
-            searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-        } catch (Exception e) {
-            return -1;
-        }
-
-        SearchHit[] searchHits = searchResponse.getHits().getHits();
-
-        if (searchHits.length == 0) return -1;
-
-        SearchHit hit = searchHits[0];
-
-        int prevCardDeckSeq = objectMapper.readValue(hit.getSourceAsString(), SwipeLog.class).getCardSetSeq();
-
-        return prevCardDeckSeq;
     }
 
     /**
